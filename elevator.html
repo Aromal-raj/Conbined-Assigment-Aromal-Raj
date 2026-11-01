@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Elevator Control System</title>
+<style>
+:root{--bg:#f1f4f3;--panel:#fff;--ink:#16262b;--mute:#586a70;--line:#d3dbdc;--a1:#0b6e8a;--raw:#c2415d;--ref:#a77b0c;--car:#0b6e8a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f171a;--panel:#172226;--ink:#e4eef0;--mute:#8fa3a8;--line:#2a3a3f;--a1:#4fc3de;--raw:#ff7a93;--ref:#e6c15a;--car:#2f8fa8;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f171a;--panel:#172226;--ink:#e4eef0;--mute:#8fa3a8;--line:#2a3a3f;--a1:#4fc3de;--raw:#ff7a93;--ref:#e6c15a;--car:#2f8fa8;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.7rem;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
+.lead{color:var(--mute);margin:0 0 18px;max-width:68ch}
+.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+h2{font-size:1rem;margin:0 0 8px;font-weight:600}
+.cab{display:flex;gap:12px}
+#shaft{width:200px;height:440px;flex:none}
+.btns{display:flex;flex-direction:column;gap:8px;justify-content:space-between;padding:12px 0}
+.fb{width:44px;height:44px;border-radius:50%;border:2px solid var(--line);background:var(--panel);color:var(--ink);font:600 1rem inherit;cursor:pointer}
+.fb:hover{border-color:var(--a1)}
+.fb:focus-visible,input:focus-visible{outline:3px solid var(--a1);outline-offset:2px}
+.fb.on{background:var(--a1);border-color:var(--a1);color:var(--panel)}
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+canvas.sc{width:100%;height:170px;display:block}
+.leg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.85rem;color:var(--mute);margin-top:4px}
+.leg i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+label{display:block;font-size:.9rem}
+label b{float:right;font-weight:600;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--a1)}
+.sw{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+.sw input{width:20px;height:20px;accent-color:var(--a1)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.st{border-left:3px solid var(--line);padding-left:10px}
+.st span{display:block;font-size:.8rem;color:var(--mute)}
+.st strong{font-size:1.25rem;font-variant-numeric:tabular-nums}
+.try{margin:0;padding-left:18px;color:var(--mute);font-size:.92rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Smart elevator control system</h1>
+<p class="lead">A six-floor car with a position loop around a speed loop. Encoder and load-cell signals are noisy, so a digital filter cleans them before the controller sees them. Press floors, then switch the filter on and off.</p>
+<div class="grid">
+<div class="box">
+<h2>Shaft</h2>
+<div class="cab"><canvas id="shaft" aria-label="Elevator shaft"></canvas><div class="btns" id="btns"></div></div>
+</div>
+<div class="side">
+<div class="box">
+<h2>Car speed (m/s)</h2><canvas class="sc" id="sv"></canvas>
+<div class="leg"><span><i style="background:var(--ref)"></i>Command</span><span><i style="background:var(--raw)"></i>Measured, raw</span><span><i style="background:var(--a1)"></i>Measured, filtered</span></div>
+</div>
+<div class="box">
+<h2>Rider acceleration (m/s²)</h2><canvas class="sc" id="sa"></canvas>
+</div>
+<div class="box">
+<div class="ctl">
+<label class="sw"><input type="checkbox" id="dsp" checked> Digital filter on</label>
+<label>Filter cutoff <b id="vfc"></b><input type="range" id="fc" min="1" max="30" value="5"></label>
+<label>Sensor noise <b id="vnz"></b><input type="range" id="noise" min="0" max="100" value="50"></label>
+<label>Passenger load <b id="vld"></b><input type="range" id="load" min="0" max="800" step="10" value="300"></label>
+</div>
+</div>
+<div class="box">
+<div class="stats">
+<div class="st"><span>Status</span><strong id="s1">Idle</strong></div>
+<div class="st"><span>Last stop error</span><strong id="s2">–</strong></div>
+<div class="st"><span>Ride jerk (RMS)</span><strong id="s3">0.0</strong></div>
+<div class="st"><span>Load: sensed / true</span><strong id="s4">–</strong></div>
+</div>
+</div>
+<div class="box"><h2>Try this</h2>
+<ol class="try"><li>Filter off, noise high, go to floor 5: the force chatters and the ride jerk climbs.</li><li>Filter on, cutoff at 1 Hz: the noise is gone but the speed loop lags and the car sways.</li><li>Raise the load with the filter off: spikes in the load cell throw off the gravity compensation.</li></ol>
+</div>
+</div>
+</div>
+</div>
+<script>
+const FL=6,H=3,TOP=(FL-1)*H,dt=0.004,g=9.81,CW=1250,MC=1000,VM=2.5,AM=1,J=4,KP=1.6,KV=8,KI=10;
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const gauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(6.2832*Math.random());
+const S={brake:true,x:0,v:0,a:0,y:0,yf:0,vf:0,vr:0,ar:0,I:0,le:300,buf:[],q:[],tgtH:0,door:0,hold:0,err:null,j2:0,a0:0,n:0,vm:0,F:0};
+const D={vt:[],vraw:[],vf:[],vref:[],a:[]},NMAX=500;
+const names=['G','1','2','3','4','5'];
+const ctx={};
+function fit(){for(const [k,id] of [['s','shaft'],['v','sv'],['a','sa']]){const c=$(id),r=c.getBoundingClientRect(),d=devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);ctx[k]=[x,r.width,r.height]}}
+addEventListener('resize',fit);
+for(let f=FL-1;f>=0;f--){const b=document.createElement('button');b.className='fb';b.id='f'+f;b.textContent=names[f];b.setAttribute('aria-label','Go to floor '+names[f]);b.onclick=()=>{if(!S.q.includes(f))S.q.push(f)};$('btns').appendChild(b)}
+function ui(){$('vfc').textContent=$('fc').value+' Hz';$('vnz').textContent=$('noise').value+'%';$('vld').textContent=$('load').value+' kg'}
+['fc','noise','load'].forEach(i=>$(i).oninput=ui);ui();
+
+function step(){
+ const n=+$('noise').value/100,dsp=$('dsp').checked,fc=+$('fc').value,load=+$('load').value;
+ // encoder: position plus noise, speed by differencing
+ const y=S.x+gauss()*(2e-4+8e-4*n);
+ const vraw=(y-S.y)/dt;S.y=y;
+ S.vf+=(1-Math.exp(-6.283*fc*dt))*(vraw-S.vf);
+ S.yf+=(1-Math.exp(-6.283*fc*3*dt))*(y-S.yf);
+ // load cell: noise plus occasional spikes
+ let lr=load+gauss()*(5+80*n);if(Math.random()<0.002*n)lr+=(Math.random()<.5?-1:1)*250;
+ S.buf.push(lr);if(S.buf.length>5)S.buf.shift();
+ const med=[...S.buf].sort((p,q)=>p-q)[S.buf.length>>1];
+ if(dsp)S.le+=0.003*(med-S.le);else S.le=lr;
+ const ym=dsp?S.yf:y,vm=dsp?S.vf:vraw;S.vm=vm;
+ // outer loop: position error to speed command
+ if(S.door>0)S.door-=dt;
+ if(S.brake&&S.q.length&&S.door<=0)S.brake=false;
+ const tgt=(S.q.length&&S.door<=0)?S.q[0]*H:S.tgtH;
+ const e=tgt-ym;
+ const vc=Math.sign(e)*Math.min(VM,Math.sqrt(2*AM*.5*Math.abs(e)),Math.abs(e)*KP);
+ // jerk-limited speed reference
+ const des=clamp((vc-S.vr)/.3,-AM,AM);
+ S.ar+=clamp(des-S.ar,-J*dt,J*dt);S.vr+=S.ar*dt;
+ // inner loop: PI on speed plus feed-forward
+ const ev=S.vr-vm;
+ S.I=clamp(S.I+KI*ev*dt,-2,2);
+ const Me=MC+Math.max(0,S.le);
+ S.F=clamp((Me+CW)*(KV*ev+S.I+S.ar)+(Me-CW)*g,-45000,45000);
+ // plant
+ const M=MC+load;
+ const fr=150*Math.tanh(S.v/.02);
+ if(S.brake){S.v=0;S.a=0;S.vr=0;S.ar=0;S.I=0}else{
+ S.a=(S.F-(M-CW)*g-fr)/(M+CW);
+ S.v+=S.a*dt;S.x+=S.v*dt}
+ if(S.x<0){S.x=0;S.v=Math.max(0,S.v)}if(S.x>TOP){S.x=TOP;S.v=Math.min(0,S.v)}
+ // arrival
+ if(S.q.length&&S.door<=0&&Math.abs(S.x-tgt)<.01&&Math.abs(S.v)<.03){S.hold+=dt;
+  if(S.hold>.3){S.err=(S.x-tgt)*1000;S.tgtH=tgt;S.q.shift();S.door=2.5;S.brake=true;S.hold=0}}else S.hold=0;
+ // jerk and history
+ if(++S.n%12==0){const j=(S.a-S.a0)/(12*dt);S.a0=S.a;S.j2+=.02*(j*j-S.j2)}
+ if(S.n%5==0){const p=(k,v)=>{D[k].push(v);if(D[k].length>NMAX)D[k].shift()};p('vt',S.v);p('vraw',vraw);p('vf',S.vf);p('vref',S.vr);p('a',S.a)}
+}
+
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function scope(k,lines,lim,unit){
+ const [x,w,h]=ctx[k];x.clearRect(0,0,w,h);const L=36;
+ x.font='11px system-ui,sans-serif';x.textBaseline='middle';x.lineWidth=1;
+ for(let i=-2;i<=2;i++){const yy=h/2-i*(h/2-6)/2;x.strokeStyle=css('--line');x.beginPath();x.moveTo(L,yy);x.lineTo(w,yy);x.stroke();x.fillStyle=css('--mute');x.fillText((i*lim/2).toFixed(lim<2?1:1),2,yy)}
+ x.save();x.beginPath();x.rect(L,0,w-L,h);x.clip();
+ for(const [d,c,lw] of lines){x.strokeStyle=css(c);x.lineWidth=lw;x.beginPath();d.forEach((v,i)=>{const px=L+(i/(NMAX-1))*(w-L),py=h/2-clamp(v/lim,-1,1)*(h/2-6);i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke()}
+ x.restore();
+}
+function shaft(){
+ const [x,w,h]=ctx.s,pad=20,sc=(h-2*pad)/TOP,Y=m=>h-pad-m*sc;
+ x.clearRect(0,0,w,h);x.font='12px system-ui,sans-serif';x.textBaseline='middle';
+ for(let f=0;f<FL;f++){const yy=Y(f*H);x.strokeStyle=css('--line');x.lineWidth=1;x.beginPath();x.moveTo(24,yy);x.lineTo(w,yy);x.stroke();x.fillStyle=css('--mute');x.fillText(names[f],4,yy-8)}
+ const cx=34,cw=100,ch=H*sc*.85,cy=Y(S.x)-ch;
+ x.strokeStyle=css('--mute');x.lineWidth=1.5;x.beginPath();x.moveTo(cx+cw/2,pad-8);x.lineTo(cx+cw/2,cy);x.stroke();
+ const wy=Y(TOP-S.x);x.beginPath();x.moveTo(168,pad-8);x.lineTo(168,wy-H*sc*.5);x.stroke();
+ x.fillStyle=css('--mute');x.fillRect(158,wy-H*sc*.5,20,H*sc*.5);
+ x.strokeStyle=css('--car');x.lineWidth=2.5;x.fillStyle=css('--panel');x.fillRect(cx,cy,cw,ch);
+ const ld=clamp(+$('load').value/800,0,1);x.globalAlpha=.35;x.fillStyle=css('--car');x.fillRect(cx,cy+ch*(1-ld),cw,ch*ld);x.globalAlpha=1;
+ x.strokeRect(cx,cy,cw,ch);
+ x.fillStyle=css('--ink');x.font='600 14px system-ui,sans-serif';x.textAlign='center';
+ const fl=clamp(Math.round(S.x/H),0,FL-1);x.fillText(names[fl]+(S.v>.05?' ▲':S.v<-.05?' ▼':''),cx+cw/2,cy+ch/2);x.textAlign='left';
+}
+function stats(){
+ for(let f=0;f<FL;f++)$('f'+f).classList.toggle('on',S.q.includes(f));
+ $('s1').textContent=S.brake?(S.door>0?'Doors open, brake on':'Brake on'):Math.abs(S.v)>.03?'Moving':S.q.length?'Settling':'Idle';
+ $('s2').textContent=S.err===null?'–':(S.err>=0?'+':'')+S.err.toFixed(1)+' mm';
+ $('s3').textContent=Math.sqrt(S.j2).toFixed(2)+' m/s³';
+ $('s4').textContent=Math.round(Math.max(0,S.le))+' / '+$('load').value+' kg';
+}
+let last=performance.now(),acc=0;
+function frame(t){
+ acc+=Math.min(.05,(t-last)/1000);last=t;
+ while(acc>=dt){step();acc-=dt}
+ shaft();
+ scope('v',[[D.vraw,'--raw',1],[D.vref,'--ref',1.5],[D.vf,'--a1',2]],3);
+ scope('a',[[D.a,'--a1',1.5]],2);
+ stats();requestAnimationFrame(frame);
+}
+fit();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
